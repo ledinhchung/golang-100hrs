@@ -4,11 +4,29 @@ import (
 	"net/http"
 
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
+var db *gorm.DB
+
+func init() {
+	var err error
+	dbname := "basic.db"
+
+	db, err = gorm.Open(sqlite.Open(dbname), &gorm.Config{})
+	if err != nil {
+		panic("Failed to connect database")
+	}
+
+	db.AutoMigrate(&User{})
+}
+
 type User struct {
-	Name  string `json:"Name" form:"name"`
-	Email string `json:"Email" form:"email"`
+	gorm.Model
+	Name  string `json:"name"`
+	Email string `json:"email"`
 }
 
 func hello(c echo.Context) error {
@@ -16,42 +34,57 @@ func hello(c echo.Context) error {
 	return c.String(http.StatusOK, "Welcome "+name+" to Go world!\n")
 }
 
-func listUser(c echo.Context) error {
-	return c.String(http.StatusOK, "List of user\n")
+func getUsers(c echo.Context) error {
+	var users []User
+	db.Find(&users)
+	return c.JSON(http.StatusOK, users)
 }
 
 func createUser(c echo.Context) error {
-	u := new(User)
-	if err := c.Bind(u); err != nil {
+	user := new(User)
+	if err := c.Bind(user); err != nil {
 		return err
 	}
-	return c.JSON(http.StatusCreated, u)
+	db.Create(&user)
+	return c.JSON(http.StatusCreated, user)
 }
 
 func getUser(c echo.Context) error {
 	id := c.Param("id")
-	return c.String(http.StatusOK, "Get user with id: "+id+"\n")
+	var user User
+	db.First(&user, id)
+	return c.JSON(http.StatusOK, user)
 }
 
 func updateUser(c echo.Context) error {
 	id := c.Param("id")
-	if err := c.Bind(u); err != nil {
+	user := new(User)
+	var oldUser User
+	if err := c.Bind(user); err != nil {
 		return err
 	}
-	return c.String(http.StatusOK, "Updated user id:"+id+"\n")
+	db.First(&oldUser, id)
+	db.Model(&oldUser).Update("Name", user.Name)
+	db.Model(&oldUser).Update("Email", user.Email)
+	return c.JSON(http.StatusOK, oldUser)
 }
 
 func deleteUser(c echo.Context) error {
 	id := c.Param("id")
-	return c.String(http.StatusOK, "Deleted user id: "+id+"\n")
+	var user User
+	db.Delete(&user, id)
+	return c.NoContent(http.StatusNoContent)
 }
 
 func main() {
 	e := echo.New()
 	e.GET("/hello", hello)
 
+	e.Use(middleware.Logger())
+	e.Use(middleware.Recover())
+
 	// User CURD
-	e.GET("/users", listUser)
+	e.GET("/users", getUsers)
 	e.POST("/users", createUser)
 	e.GET("/users/:id", getUser)
 	e.PUT("/users/:id", updateUser)
